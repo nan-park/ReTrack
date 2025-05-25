@@ -6,12 +6,18 @@
 //
 
 import SwiftUI
+import Firebase
 
 @main
 struct ReTrackApp: App {
+    @StateObject var postViewModel: PostViewModel = PostViewModel()
+    init() {
+        FirebaseApp.configure()
+    }
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            MainView()
+                .environmentObject(postViewModel)
         }
     }
 }
