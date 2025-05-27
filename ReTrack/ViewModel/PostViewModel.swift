@@ -1,58 +1,3 @@
-//import SwiftUI
-//
-//class PostViewModel: ObservableObject {
-//    @Published var posts: [UUID: Post] = [:]
-//
-//    private let postService = PostService()
-//
-//    var sortedPosts: [Post] {
-//        return posts.values.sorted { $0.createdAt > $1.createdAt }
-//    }
-//
-//    init() {
-//        loadPosts()
-//    }
-//
-//    private func loadPosts() {
-//        posts = postService.loadPosts()
-//    }
-//
-//    func addPost(
-//        nickname: String, content: String, password: String, imageUrl: [URL]
-//    ) {
-//        postService.addPost(
-//            posts: &posts, nickname: nickname, content: content,
-//            password: password, imageUrl: imageUrl)
-//    }
-//
-//    func updatePost(id: UUID, content: String) {
-//        postService.updatePost(posts: &posts, id: id, content: content)
-//    }
-//
-//    func deletePost(id: UUID) {
-//        postService.deletePost(posts: &posts, id: id)
-//    }
-//    //     text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-//    func checkCondition(
-//        _ nickname: String, _ content: String, _ password: String,
-//        _ passwordConfirm: String
-//    ) -> String {
-//        if nickname.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-//            return "닉네임을 입력해주세요"
-//        } else if content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-//            return "내용을 입력해주세요"
-//        } else if password != passwordConfirm {
-//            return "비밀번호가 일치하지 않습니다"
-//        } else if password.trimmingCharacters(in: .whitespacesAndNewlines)
-//            .isEmpty
-//        {
-//            return "비밀번호를 입력하세요"
-//        } else {
-//            return ""
-//        }
-//    }
-//}
-
 import Foundation
 import UIKit
 
@@ -92,10 +37,13 @@ class PostViewModel: ObservableObject {
     func deletePost(id: UUID) {
         service.delete(id: id) { result in
             if case .success = result {
-                self.loadPosts()
+                DispatchQueue.main.async {
+                    self.posts.removeAll { $0.id == id }
+                }
             }
         }
     }
+
 
     func checkCondition(
         _ nickname: String, _ content: String, _ password: String,
@@ -119,9 +67,13 @@ class PostViewModel: ObservableObject {
     }
 
     func addPostWithImages(
-        nickname: String, password: String, content: String, images: [UIImage]
+        nickname: String,
+        password: String,
+        content: String,
+        images: [UIImage]
     ) {
-        service.uploadImages(images) { result in
+        self.isLoading = true // (1) 업로드 시작할 때 true
+        service.uploadImages(images: images) { result in
             switch result {
             case .success(let urls):
                 let newPost = Post(
@@ -132,18 +84,30 @@ class PostViewModel: ObservableObject {
                     imageUrls: urls,
                     createdAt: Date()
                 )
+                DispatchQueue.main.async {
+                    self.posts.insert(newPost, at: 0)
+                    self.isLoading = false // (2) 로컬 반영 후 바로 false
+                }
                 self.service.create(post: newPost) { result in
-                    if case .success = result {
+                    if case .failure = result {
+                        // 실패 시 롤백
                         DispatchQueue.main.async {
-                            self.loadPosts()
+                            self.posts.removeAll { $0.id == newPost.id }
+                            // 필요하다면 에러 알림 등 추가
                         }
                     }
+                    // 성공 시 별도 처리 필요 없음
                 }
             case .failure(let error):
+                DispatchQueue.main.async {
+                    self.isLoading = false // (3) 업로드 실패 시도 false
+                }
                 print("❌ 이미지 업로드 실패: \(error.localizedDescription)")
             }
         }
     }
+
+
 
     func updatePostWithImages(
         id: UUID,
@@ -158,7 +122,7 @@ class PostViewModel: ObservableObject {
         }
 
         // ✅ 새 이미지 업로드
-        service.uploadImages(images) { result in
+        service.uploadImages(images: images) { result in
             switch result {
             case .success(let urls):
                 let updatedPost = Post(

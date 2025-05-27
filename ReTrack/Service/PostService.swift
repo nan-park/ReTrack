@@ -1,50 +1,3 @@
-//import SwiftUI
-//
-//final class PostService {
-//    private let key = "savedPosts"
-//
-//    func loadPosts() -> [UUID: Post] {
-//        guard let savedData = UserDefaults.standard.data(forKey: key),
-//              let decodedData = try? JSONDecoder().decode([UUID: Post].self, from: savedData) else {
-//            return [:]
-//        }
-//        return decodedData
-//    }
-//
-//    private func savePosts(_ posts: [UUID: Post]){
-//        if let encodedData = try? JSONEncoder().encode(posts) {
-//            UserDefaults.standard.set(encodedData, forKey: key)
-//        }
-//    }
-//
-//    func addPost(posts: inout [UUID: Post], nickname: String, content: String, password: String, imageUrl: [URL]) {
-//        let newPost = Post(
-//            id: UUID(),
-//            nickname: nickname,
-//            password: password,
-//            content: content,
-//            imageUrl: imageUrl,
-//            createdAt: Date()
-//        )
-//        posts[newPost.id] = newPost
-//        savePosts(posts)
-//    }
-//
-//    func deletePost(posts: inout [UUID: Post], id: UUID) {
-//        posts[id] = nil
-//        savePosts(posts)
-//    }
-//
-//    func updatePost(posts: inout [UUID: Post], id: UUID, content: String) {
-//        if var post = posts[id] {
-//            post.content = content
-//            posts[id] = post
-//            savePosts(posts)
-//        }
-//    }
-//}
-//
-
 import FirebaseFirestore
 import FirebaseStorage
 import UIKit
@@ -56,6 +9,7 @@ final class PostService {
     func fetchAll(completion: @escaping (Result<[Post], Error>) -> Void) {
         db.collection(collection)
             .order(by: "createdAt", descending: true)
+            .limit(to: 20)
             .getDocuments { snapshot, error in
                 if let error = error {
                     completion(.failure(error))
@@ -108,14 +62,12 @@ final class PostService {
             }
     }
 
-    func uploadImages(
-        _ images: [UIImage],
-        completion: @escaping (Result<[String], Error>) -> Void
-    ) {
+    func uploadImages(images: [UIImage], completion: @escaping (Result<[String], Error>) -> Void) {
         let storage = Storage.storage()
         let folder = "post_images"
         var uploadedURLs: [String] = []
-        var remaining = images.count
+        let dispatchGroup = DispatchGroup()
+        var uploadError: Error?
 
         guard !images.isEmpty else {
             completion(.success([]))
@@ -124,29 +76,36 @@ final class PostService {
 
         for image in images {
             guard let imageData = image.jpegData(compressionQuality: 0.8) else {
-                completion(
-                    .failure(NSError(domain: "ImageEncodingError", code: -1)))
+                completion(.failure(NSError(domain: "ImageEncodingError", code: -1)))
                 return
             }
 
+            dispatchGroup.enter()
             let filename = UUID().uuidString + ".jpg"
             let ref = storage.reference().child(folder).child(filename)
 
             ref.putData(imageData, metadata: nil) { _, error in
                 if let error = error {
-                    completion(.failure(error))
+                    uploadError = error
+                    dispatchGroup.leave()
                     return
                 }
-
                 ref.downloadURL { url, error in
                     if let url = url {
                         uploadedURLs.append(url.absoluteString)
+                    } else if let error = error {
+                        uploadError = error
                     }
-                    remaining -= 1
-                    if remaining == 0 {
-                        completion(.success(uploadedURLs))
-                    }
+                    dispatchGroup.leave()
                 }
+            }
+        }
+
+        dispatchGroup.notify(queue: .main) {
+            if let error = uploadError {
+                completion(.failure(error))
+            } else {
+                completion(.success(uploadedURLs))
             }
         }
     }
