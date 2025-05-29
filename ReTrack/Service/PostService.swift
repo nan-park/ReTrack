@@ -9,7 +9,6 @@ final class PostService {
     func fetchAll(completion: @escaping (Result<[Post], Error>) -> Void) {
         db.collection(collection)
             .order(by: "createdAt", descending: true)
-            .limit(to: 20)
             .getDocuments { snapshot, error in
                 if let error = error {
                     completion(.failure(error))
@@ -75,7 +74,8 @@ final class PostService {
         }
 
         for image in images {
-            guard let imageData = image.jpegData(compressionQuality: 0.8) else {
+            let resizedImage = image.resized(to: 1024) ?? image
+            guard let imageData = resizedImage.jpegData(compressionQuality: 0.8) else {
                 completion(.failure(NSError(domain: "ImageEncodingError", code: -1)))
                 return
             }
